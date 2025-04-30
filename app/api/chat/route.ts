@@ -217,11 +217,39 @@ export async function POST(req: Request) {
   );
 
   // If there was an error setting up MCP clients but we at least have composio tools, continue
+  // Determine project root: prefer mcp.json, fallback to process.env
+  let projectRoot: string | undefined = undefined;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const mcpPath = path.join(process.cwd(), 'mcp.json');
+    if (fs.existsSync(mcpPath)) {
+      const mcpConfig = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+      if (mcpConfig.mcpServers) {
+        for (const serverKey of Object.keys(mcpConfig.mcpServers)) {
+          const envObj = mcpConfig.mcpServers[serverKey]?.env;
+          if (envObj && envObj.TASK_MASTER_PROJECT_ROOT) {
+            projectRoot = envObj.TASK_MASTER_PROJECT_ROOT;
+            break;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read TASK_MASTER_PROJECT_ROOT from mcp.json:', err);
+  }
+  if (!projectRoot) {
+    projectRoot = process.env.TASK_MASTER_PROJECT_ROOT;
+  }
+
+
   const result = streamText({
     model: model.languageModel(selectedModel),
     system: `You are a helpful assistant with access to a variety of tools.
 
     Today's date is ${new Date().toISOString().split('T')[0]}.
+
+    The Task Master project root directory (projectRoot) is: ${projectRoot || '[not set]'}
 
     The tools are very powerful, and you can use them to answer the user's question.
     So choose the tool that is most relevant to the user's question.
